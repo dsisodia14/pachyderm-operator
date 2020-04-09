@@ -20,11 +20,15 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	opsv1 "github.com/pachyderm/pachyderm-operator/api/v1"
+	"github.com/pachyderm/pachyderm/src/server/pkg/deploy/assets"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	opsv1 "github.com/pachyderm/pachyderm-operator/api/v1"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // PachReleaseReconciler reconciles a PachRelease object
@@ -38,10 +42,38 @@ type PachReleaseReconciler struct {
 // +kubebuilder:rbac:groups=ops.pachyderm.io,resources=pachreleases/status,verbs=get;update;patch
 
 func (r *PachReleaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("pachrelease", req.NamespacedName)
+	ctx := context.Background()
+	log := r.Log.WithValues("pachrelease", req.NamespacedName)
 
 	// your logic here
+	var pachRelease opsv1.PachRelease
+	if err := r.Get(ctx, req.NamespacedName, &pachRelease); err != nil {
+		//log.Info(err, "unable to fetch PachRelease")
+		// we'll ignore not-found errors, since they can't be fixed by an immediate
+		// requeue (we'll need to wait for a new notification), and we can get them
+		// on deleted requests.
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	//TODO Look into ctrl.CreateOrUpdate
+
+	dashService := newDashService(req.NamespacedName.Namespace)
+	err := r.Get(ctx, types.NamespacedName{Name: dashService.Name, Namespace: req.NamespacedName.Namespace}, &v1.Service{})
+	if err != nil && errors.IsNotFound(err) {
+
+		if err := controllerutil.SetControllerReference(&pachRelease, dashService, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Creating Service: ", dashService.Namespace, dashService.Name)
+
+		err = r.Create(ctx, dashService)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -50,4 +82,14 @@ func (r *PachReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&opsv1.PachRelease{}).
 		Complete(r)
+}
+
+func newDashService(namespace string) *v1.Service {
+	var opts *assets.AssetOpts
+	opts = &assets.AssetOpts{}
+	opts.BlockCacheSize = "0G"
+	opts.EtcdNodes = 1
+	opts.Namespace = namespace
+
+	return assets.DashService(opts)
 }
