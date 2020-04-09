@@ -1,0 +1,7 @@
+domain: pachyderm.io
+repo: github.com/pachyderm/pachyderm-operator
+resources:
+- group: ops
+  kind: PachRelease
+  version: v1
+version: "2"

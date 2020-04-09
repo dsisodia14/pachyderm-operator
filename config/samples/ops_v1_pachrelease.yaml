@@ -1,0 +1,7 @@
+apiVersion: ops.pachyderm.io/v1
+kind: PachRelease
+metadata:
+  name: pachrelease-sample
+spec:
+  # Add fields here
+  foo: bar
