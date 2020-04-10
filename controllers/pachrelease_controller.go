@@ -102,6 +102,30 @@ func (r *PachReleaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	//serviceAccounts := assets.ServiceAccounts(opts)
+	/*err = r.Get(ctx, types.NamespacedName{Name: dashDeployment.Name, Namespace: req.NamespacedName.Namespace}, &apps.Deployment{})
+	if err != nil && errors.IsNotFound(err) {
+
+		if err := controllerutil.SetControllerReference(&pachRelease, dashDeployment, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Creating Deployment: ", dashDeployment.Namespace, dashDeployment.Name)
+	*/
+	for _, sa := range assets.ServiceAccounts(opts) {
+		if err := controllerutil.SetControllerReference(&pachRelease, sa, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+		err = r.Create(ctx, sa)
+	}
+
+	/*	if err != nil {
+				return ctrl.Result{}, err
+			}
+		} else if err != nil {
+			return ctrl.Result{}, err
+		}*/
+
 	return ctrl.Result{}, nil
 }
 
