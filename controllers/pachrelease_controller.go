@@ -22,6 +22,7 @@ import (
 	"github.com/go-logr/logr"
 	opsv1 "github.com/pachyderm/pachyderm-operator/api/v1"
 	"github.com/pachyderm/pachyderm/src/server/pkg/deploy/assets"
+	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,6 +47,14 @@ func (r *PachReleaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	log := r.Log.WithValues("pachrelease", req.NamespacedName)
 
 	// your logic here
+
+	var opts *assets.AssetOpts
+	opts = &assets.AssetOpts{}
+	opts.BlockCacheSize = "0G"
+	opts.EtcdNodes = 1
+	opts.Namespace = req.NamespacedName.Namespace
+	opts.DashImage = "pachyderm/dash:0.5.48"
+
 	var pachRelease opsv1.PachRelease
 	if err := r.Get(ctx, req.NamespacedName, &pachRelease); err != nil {
 		//log.Info(err, "unable to fetch PachRelease")
@@ -57,7 +66,7 @@ func (r *PachReleaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 
 	//TODO Look into ctrl.CreateOrUpdate
 
-	dashService := newDashService(req.NamespacedName.Namespace)
+	dashService := assets.DashService(opts)
 	err := r.Get(ctx, types.NamespacedName{Name: dashService.Name, Namespace: req.NamespacedName.Namespace}, &v1.Service{})
 	if err != nil && errors.IsNotFound(err) {
 
@@ -75,6 +84,24 @@ func (r *PachReleaseReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	dashDeployment := assets.DashDeployment(opts)
+	err = r.Get(ctx, types.NamespacedName{Name: dashDeployment.Name, Namespace: req.NamespacedName.Namespace}, &apps.Deployment{})
+	if err != nil && errors.IsNotFound(err) {
+
+		if err := controllerutil.SetControllerReference(&pachRelease, dashDeployment, r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Creating Deployment: ", dashDeployment.Namespace, dashDeployment.Name)
+
+		err = r.Create(ctx, dashDeployment)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -82,14 +109,4 @@ func (r *PachReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&opsv1.PachRelease{}).
 		Complete(r)
-}
-
-func newDashService(namespace string) *v1.Service {
-	var opts *assets.AssetOpts
-	opts = &assets.AssetOpts{}
-	opts.BlockCacheSize = "0G"
-	opts.EtcdNodes = 1
-	opts.Namespace = namespace
-
-	return assets.DashService(opts)
 }
