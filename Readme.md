@@ -1,5 +1,5 @@
 # Pachyderm Operator
-The goal of this project
+The goal of this project is to make a operator for pachyderm to cover common operations like installing and upgrading clusters.
 
 **Status**: Experimental
 
